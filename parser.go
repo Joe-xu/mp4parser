@@ -8,30 +8,43 @@ import (
 	"os"
 )
 
-//Parse parses the mp4 file , return root box and an error ,if any
-func Parse(file *os.File) (*Box, error) {
-	rootBox := newBox()
+const (
+	seekFromStart = iota
+	seekFromCurrent
+	seekFromEnd
+)
 
-	size, _ := file.Seek(0, 2)
-	file.Seek(0, 0)
+//Parse parses the mp4 file , return root box and an error ,if any
+func Parse(file *os.File) (*RootBox, error) {
+	rootBox := new(RootBox)
+	rootBox.Box = newBox()
+
+	size, _ := file.Seek(0, seekFromEnd)
+	file.Seek(0, seekFromStart)
 	rootBox.headerSize = 0
 	rootBox.size = uint64(size)
 	rootBox.boxType = "root"
 
-	err := parseInnerBox(rootBox, file)
+	err := parseInnerBox(rootBox.Box, file)
 
 	return rootBox, err
 }
 
-//parseBoxHeadr parse b's size and type in header, return an error,if any
+//parseBoxHeadr parses b's size and type in header, return an error,if any,and resumes file seeker
 func parseBoxHeadr(h *header, file *os.File) (err error) {
+	savedOffset, err := file.Seek(0, seekFromCurrent)
+	if err != nil {
+		return
+	}
+	defer file.Seek(savedOffset, seekFromStart)
+
 	temp := new([8]byte)
 
 	if n, err := file.Read(temp[:8]); err != nil || n != 8 {
 		if err == io.EOF {
 			return err
 		}
-		return fmt.Errorf("parseBoxHeadr: %v\n", err)
+		return fmt.Errorf("parseBoxHeadr: %d-th byte  %v\n", n, err)
 	}
 
 	h.boxType = string(temp[4:8])
@@ -60,42 +73,55 @@ func parseBoxHeadr(h *header, file *os.File) (err error) {
 	return
 }
 
-//parseInnerBox parses b's inner boxs , return an error,if any
+//parseInnerBox parses b's inner boxs , return an error,if any,and resumes file seeker
 func parseInnerBox(b *Box, file *os.File) (err error) {
-
+	savedOffset, err := file.Seek(0, seekFromCurrent)
+	defer file.Seek(savedOffset, seekFromStart)
 	var endOffset, offsetTmp int64
 
-	if offsetTmp, err = file.Seek(0, 1); err != nil { //record current offset
+	offsetTmp, err = file.Seek(int64(b.headerSize), seekFromCurrent) //skip  box header
+	if err != nil {
 		return
 	}
-	endOffset = offsetTmp + int64(b.size-uint64(b.headerSize))
+
+	endOffset = savedOffset + int64(b.size-uint64(b.headerSize))
 
 	for {
 		innerBoxTmp := newBox()
+		innerBoxTmp.nth = b.nth + 1
+		b.addInnerBox(innerBoxTmp)
 		if err = parseBoxHeadr(innerBoxTmp.header, file); err != nil {
 			if err == io.EOF {
 				return
 			}
 			return fmt.Errorf("parseInnerBox:%v %v\n", b, err)
 		}
-		innerBoxTmp.nth = b.nth + 1
-		b.addInnerBox(innerBoxTmp)
 
-		offsetTmp, err = file.Seek(0, 1) //record  offset
 		if innerBoxTmp.isContainer() {
 
 			if err = parseInnerBox(innerBoxTmp, file); err != nil { //
 				return
 			}
 
-			_, err = file.Seek(offsetTmp, 0) //reset
-
 		}
-		innerBoxDataSize := int64(innerBoxTmp.size - uint64(innerBoxTmp.headerSize))
-		innerBoxTmp.offset = offsetTmp - int64(innerBoxTmp.headerSize)
-		if offsetTmp, err = file.Seek(innerBoxDataSize, 1); err != nil || offsetTmp >= endOffset {
+
+		innerBoxTmp.offset = offsetTmp
+		if offsetTmp, err = file.Seek(int64(innerBoxTmp.size), seekFromCurrent); err != nil || offsetTmp >= endOffset {
 			return
 		}
 	}
 
+}
+
+//scanBoxData scans box data from file, return an error , if any ,and resumes file seeker
+func scanBoxData(b *Box, file *os.File) (err error) {
+	savedOffset, _ := file.Seek(0, seekFromCurrent)
+	defer file.Seek(savedOffset, seekFromStart)
+
+	switch b.boxType {
+	case "": //TODO
+	default:
+		return fmt.Errorf("unexcepted box type:%v", b.boxType)
+	}
+	return
 }
