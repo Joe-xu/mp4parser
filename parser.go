@@ -89,6 +89,7 @@ func parseInnerBox(b *Box, file *os.File) (err error) {
 	for {
 		innerBoxTmp := newBox()
 		innerBoxTmp.nth = b.nth + 1
+		innerBoxTmp.offset = offsetTmp
 		b.addInnerBox(innerBoxTmp)
 		if err = parseBoxHeadr(innerBoxTmp.header, file); err != nil {
 			if err == io.EOF {
@@ -105,7 +106,8 @@ func parseInnerBox(b *Box, file *os.File) (err error) {
 
 		}
 
-		innerBoxTmp.offset = offsetTmp
+		scanBoxData(innerBoxTmp, file)
+
 		if offsetTmp, err = file.Seek(int64(innerBoxTmp.size), seekFromCurrent); err != nil || offsetTmp >= endOffset {
 			return
 		}
@@ -119,7 +121,14 @@ func scanBoxData(b *Box, file *os.File) (err error) {
 	defer file.Seek(savedOffset, seekFromStart)
 
 	switch b.boxType {
-	case "": //TODO
+	case "stsc":
+		stscBox := newSTSC(b)
+		err = stscBox.scan(file)
+		// fmt.Print(stscBox)
+	case "stco":
+		stcoBox := newSTCO(b)
+		err = stcoBox.scan(file)
+		// fmt.Print(stcoBox)
 	default:
 		return fmt.Errorf("unexcepted box type:%v", b.boxType)
 	}
