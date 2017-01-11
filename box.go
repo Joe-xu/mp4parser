@@ -2,7 +2,9 @@ package mp4parser
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
@@ -26,7 +28,7 @@ type RootBox struct {
 	tracks       []*trak
 	creationTime time.Time
 	modifTime    time.Time
-	duration     time.Time
+	duration     uint32
 }
 
 //box header
@@ -102,7 +104,7 @@ type mvhd struct {
 	version      uint8
 	creationTime time.Time
 	modifTime    time.Time
-	duration     time.Time
+	duration     uint32
 	// timeScale    uint32
 	nextTrackID uint32
 }
@@ -122,10 +124,10 @@ const (
 type tkhd struct {
 	*Box
 	version      uint8
-	flags        uint32
+	flags        uint32 //3 bytes in file
 	creationTime time.Time
 	modifTime    time.Time
-	duration     time.Time
+	duration     uint32
 	trackID      uint32
 	width        uint32
 	height       uint32
@@ -142,7 +144,7 @@ type mdhd struct {
 	version      uint8
 	creationTime time.Time
 	modifTime    time.Time
-	duration     time.Time
+	duration     uint32
 	// timeScale    uint32
 }
 
@@ -178,4 +180,156 @@ type smhd struct {
 //stbl  sample table
 type stbl struct {
 	*Box
+}
+
+//stsc sample to chunk
+/**
+*size 4
+*type 4
+*version 1
+*flags 3
+*entryCount 4
+ */
+type stsc struct {
+	*Box
+	// version uint8
+	// flag uint32 //uint24
+	entryCount uint32
+	entrys     []*stscEntry
+}
+
+type stscEntry struct {
+	firstChunk      uint32
+	samplesPerChunk uint32
+	sampleDescIndex uint32 //index to find sample description in stsd
+}
+
+func (b *stsc) String() string {
+	buffer := new(bytes.Buffer)
+
+	buffer.WriteString(fmt.Sprintf("entry count: %d\n", b.entryCount))
+	buffer.WriteString("\t\tfirstChunk\tsamplesPerChunk\tsampleDescIndex\n")
+	for i, entry := range b.entrys {
+
+		buffer.WriteString(
+			fmt.Sprintf("%d\t%d\t%d\t%d\n",
+				i, entry.firstChunk, entry.samplesPerChunk, entry.sampleDescIndex))
+	}
+
+	return buffer.String()
+}
+
+func newSTSC(b *Box) *stsc {
+	return &stsc{
+		Box: b,
+		// entrys:make([]*stscEntry,1),
+	}
+}
+
+//scan stsc data in file , return an error ,if any , and resume file seeker
+func (b *stsc) scan(file *os.File) (err error) {
+	savedOffset, _ := file.Seek(0, seekFromCurrent)
+	defer file.Seek(savedOffset, seekFromStart)
+
+	temp := new([12]byte)
+
+	_, err = file.Seek(b.offset+12, seekFromStart) //skip to entry count
+	if err != nil {
+		return
+	}
+	_, err = file.Read(temp[:4]) //read entry count
+	if err != nil {
+		return
+	}
+
+	b.entryCount = binary.BigEndian.Uint32(temp[:4])
+	if b.entrys == nil {
+		b.entrys = make([]*stscEntry, 0, b.entryCount)
+	}
+
+	for i := uint32(0); i < b.entryCount; i++ {
+
+		_, err = file.Read(temp[:])
+		if err != nil {
+			return
+		}
+		b.entrys = append(b.entrys, &stscEntry{
+			firstChunk:      binary.BigEndian.Uint32(temp[:4]),
+			samplesPerChunk: binary.BigEndian.Uint32(temp[4:8]),
+			sampleDescIndex: binary.BigEndian.Uint32(temp[8:12]),
+		})
+
+	}
+
+	return
+}
+
+//stco chunk offset
+/**
+*size 4
+*type 4
+*version 1
+*flags 3
+*entryCount 4
+*chunkOffset entryCount*4
+ */
+type stco struct {
+	*Box
+	// version     uint8
+	entryCount  uint32
+	chunkOffset []uint32
+}
+
+func (b *stco) String() string {
+	buffer := new(bytes.Buffer)
+
+	buffer.WriteString(fmt.Sprintf("entry count: %d\n", b.entryCount))
+
+	for _, offset := range b.chunkOffset {
+
+		buffer.WriteString(
+			fmt.Sprintf("\t%d\n", offset))
+	}
+
+	return buffer.String()
+}
+
+func newSTCO(b *Box) *stco {
+	return &stco{
+		Box: b,
+	}
+}
+
+//scan stco data in file , return an error ,if any , and resume file seeker
+func (b *stco) scan(file *os.File) (err error) {
+	savedOffset, _ := file.Seek(0, seekFromCurrent)
+	defer file.Seek(savedOffset, seekFromStart)
+
+	temp := new([4]byte)
+
+	_, err = file.Seek(b.offset+12, seekFromStart) //skip to entry count
+	if err != nil {
+		return
+	}
+	_, err = file.Read(temp[:]) //read entry count
+	if err != nil {
+		return
+	}
+
+	b.entryCount = binary.BigEndian.Uint32(temp[:])
+	if b.chunkOffset == nil {
+		b.chunkOffset = make([]uint32, 0, b.entryCount)
+	}
+
+	for i := uint32(0); i < b.entryCount; i++ {
+
+		_, err = file.Read(temp[:])
+		if err != nil {
+			return
+		}
+		b.chunkOffset = append(b.chunkOffset, binary.BigEndian.Uint32(temp[:]))
+
+	}
+
+	return
 }
