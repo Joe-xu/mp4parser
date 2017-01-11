@@ -22,13 +22,10 @@ type Box struct {
 	offset    int64 //offset in file
 }
 
-//RootBox contains all box in file and media status
+//RootBox contains all box in file
 type RootBox struct {
 	*Box
-	tracks       []*trak
-	creationTime time.Time
-	modifTime    time.Time
-	duration     uint32
+	tracks []*trak
 }
 
 //box header
@@ -59,7 +56,6 @@ func (b *Box) addInnerBox(inner *Box) {
 
 }
 
-//String stringify Box and inner boxs
 func (b *Box) String() string {
 	buffer := new(bytes.Buffer)
 	buffer.WriteString(fmt.Sprintf(
@@ -88,10 +84,18 @@ func (h *header) String() string {
 
 //
 func (b *Box) isContainer() bool {
+	if strings.TrimSpace(b.boxType) == "" {
+		return false
+	}
 	return strings.Contains("moov trak mdia minf dinf stbl", b.boxType)
 }
 
 //=====specified box types=======//
+
+//boxs contain meta data
+type dataBox interface {
+	scan(*os.File) error
+}
 
 //moov movie
 type moov struct {
@@ -99,14 +103,68 @@ type moov struct {
 }
 
 //mvhd  movie header
+/**
+*size 4
+*type 4
+*version 1
+*flags 3
+*creation_time 4
+*modification_time 4
+*time_scale 4
+*duration 4
+*rate 4
+*volume 2
+*_reserved 10
+*matrix 36
+*pre-defined 24
+*next_track_id 4
+ */
 type mvhd struct {
 	*Box
 	version      uint8
-	creationTime time.Time
-	modifTime    time.Time
+	creationTime *time.Time
+	modifTime    *time.Time
 	duration     uint32
-	// timeScale    uint32
-	nextTrackID uint32
+	timeScale    uint32
+	// nextTrackID uint32
+}
+
+func newMVHD(b *Box) *mvhd {
+	return &mvhd{
+		Box: b,
+	}
+}
+
+//scan mvhd data in file , return an error ,if any , and resume file seeker
+func (b *mvhd) scan(file *os.File) (err error) {
+	savedOffset, _ := file.Seek(0, seekFromCurrent)
+	defer file.Seek(savedOffset, seekFromStart)
+
+	temp := new([16]byte)
+	_, err = file.Seek(b.offset+12, seekFromStart) //skip to creation_time
+	if err != nil {
+		return
+	}
+	_, err = file.Read(temp[:])
+	if err != nil {
+		return
+	}
+
+	b.creationTime, err = getFixTime(binary.BigEndian.Uint32(temp[:4]))
+	if err != nil {
+		return
+	}
+
+	b.modifTime, err = getFixTime(binary.BigEndian.Uint32(temp[4:8]))
+	if err != nil {
+		return
+	}
+
+	b.timeScale = binary.BigEndian.Uint32(temp[8:12])
+
+	b.duration = binary.BigEndian.Uint32(temp[12:16])
+
+	return
 }
 
 //trak track
@@ -125,8 +183,8 @@ type tkhd struct {
 	*Box
 	version      uint8
 	flags        uint32 //3 bytes in file
-	creationTime time.Time
-	modifTime    time.Time
+	creationTime *time.Time
+	modifTime    *time.Time
 	duration     uint32
 	trackID      uint32
 	width        uint32
@@ -142,8 +200,8 @@ type mdia struct {
 type mdhd struct {
 	*Box
 	version      uint8
-	creationTime time.Time
-	modifTime    time.Time
+	creationTime *time.Time
+	modifTime    *time.Time
 	duration     uint32
 	// timeScale    uint32
 }
