@@ -26,6 +26,8 @@ func TestIsContainer(t *testing.T) {
 		{"stbl", true},
 		{"stsd", false},
 		{"fytp", false},
+		{"", false},
+		{" ", false},
 	}
 
 	for _, test := range tests {

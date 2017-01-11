@@ -88,6 +88,9 @@ func (h *header) String() string {
 
 //
 func (b *Box) isContainer() bool {
+	if strings.TrimSpace(b.boxType) == "" {
+		return false
+	}
 	return strings.Contains("moov trak mdia minf dinf stbl", b.boxType)
 }
 
