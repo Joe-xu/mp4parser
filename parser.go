@@ -27,7 +27,7 @@ type Parser struct {
 func NewParser(file *os.File) *Parser {
 	return &Parser{
 		file:      file,
-		rootBox:   new(RootBox),
+		rootBox:   newRootBox(),
 		dataBoxs:  make(map[string][]dataBox),
 		mediaInfo: new(MediaInfo),
 	}
@@ -36,12 +36,11 @@ func NewParser(file *os.File) *Parser {
 //Parse parses the mp4 file , return mediaInfo and an error ,if any
 func (p *Parser) Parse() (*MediaInfo, error) {
 
-	fileInfo, err := p.file.Stat() //get file
+	fileInfo, err := p.file.Stat() //get file size
 	if err != nil {
 		return nil, err
 	}
 
-	p.rootBox.Box = newBox()
 	p.rootBox.headerSize = 0
 	p.rootBox.size = uint64(fileInfo.Size())
 	p.rootBox.boxType = "root"
@@ -143,6 +142,11 @@ func (p *Parser) scanBoxData(b *Box) (err error) {
 	defer p.file.Seek(savedOffset, seekFromStart)
 
 	switch b.boxType {
+	case "tkhd": //get track data
+		tkhdBox := newTKHD(b)
+		err = tkhdBox.scan(p.file)
+		//TODO
+
 	case "mvhd":
 		mvhdBox := newMVHD(b)
 		err = mvhdBox.scan(p.file)

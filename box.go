@@ -25,7 +25,9 @@ type Box struct {
 //RootBox contains all box in file
 type RootBox struct {
 	*Box
-	tracks []*trak
+	videoTracks []*trak
+	soundTracks []*trak
+	// hintTracks  []*trak
 }
 
 //box header
@@ -36,14 +38,22 @@ type header struct {
 	boxType    string
 }
 
-//newBox create Box
-func newBox() (b *Box) {
-	b = &Box{
+//newBox return new Box
+func newBox() *Box {
+
+	return &Box{
 		header:    &header{headerSize: normalHeaderSize},
 		innerBoxs: make(map[string][]*Box),
 	}
+}
 
-	return
+//newRootBox return new RootBox
+func newRootBox() *RootBox {
+	return &RootBox{
+		Box:         newBox(),
+		videoTracks: make([]*trak, 0, 1),
+		soundTracks: make([]*trak, 0, 1),
+	}
 }
 
 //newInnerBox  add new innerbox
@@ -104,20 +114,19 @@ type moov struct {
 
 //mvhd  movie header
 /**
-*size 4
-*type 4
-*version 1
-*flags 3
-*creation_time 4
-*modification_time 4
-*time_scale 4
-*duration 4
-*rate 4
-*volume 2
-*_reserved 10
-*matrix 36
-*pre-defined 24
-*next_track_id 4
+*header				normalHeaderSize/largeHeaderSize
+*version 			1
+*flags 				3
+*creation_time 		4
+*modification_time 	4
+*time_scale 		4
+*duration 			4
+*rate 				4
+*volume 			2
+*_reserved 			10
+*matrix 			36
+*pre-defined 		24
+*next_track_id 		4
  */
 type mvhd struct {
 	*Box
@@ -141,7 +150,7 @@ func (b *mvhd) scan(file *os.File) (err error) {
 	defer file.Seek(savedOffset, seekFromStart)
 
 	temp := new([16]byte)
-	_, err = file.Seek(b.offset+12, seekFromStart) //skip to creation_time
+	_, err = file.Seek(b.offset+int64(b.headerSize)+4, seekFromStart) //skip to creation_time
 	if err != nil {
 		return
 	}
@@ -178,17 +187,95 @@ const (
 	trackInMovie   = 0x000002
 	trackInPreview = 0x000004
 ) //track flags
-
+/**
+*header				normalHeaderSize/largeHeaderSize
+*version			1
+*flags				3
+*creation_time 		4
+*modification_time	4
+*track_id			4
+*_reserved			4
+*duration			4
+*_reserved			8
+*layer				2
+*alternate_group	2
+*volume				2	//[8.8]  e.g. max value 0x0100 = 1.0
+*_reserved			2
+*matrix				36
+*width				4	//[16.16]
+*height				4
+ */
 type tkhd struct {
 	*Box
-	version      uint8
-	flags        uint32 //3 bytes in file
+	// version      uint8
+	flags        uint32
 	creationTime *time.Time
 	modifTime    *time.Time
 	duration     uint32
-	trackID      uint32
-	width        uint32
-	height       uint32
+	// trackID      uint32
+	volume float64
+	width  float64
+	height float64
+}
+
+func newTKHD(b *Box) *tkhd {
+	return &tkhd{
+		Box: b,
+	}
+}
+
+//scan tkhd data in file , return an error ,if any , and resume file seeker
+func (b *tkhd) scan(file *os.File) (err error) {
+	savedOffset, _ := file.Seek(0, seekFromCurrent)
+	defer file.Seek(savedOffset, seekFromStart)
+
+	temp := new([40]byte)
+
+	_, err = file.Seek(b.offset+int64(b.headerSize), seekFromStart) //skip to version
+	if err != nil {
+		return
+	}
+
+	_, err = file.Read(temp[:40]) //
+	if err != nil {
+		return
+	}
+
+	// if version := binary.BigEndian.Uint16(temp[:1]); version == 1 {
+	// 	panic("scan tkhd: version = 1")
+	// }
+
+	// b.flags=temp[1:4]
+	b.creationTime, err = getFixTime(binary.BigEndian.Uint32(temp[4:8]))
+	if err != nil {
+		return
+	}
+
+	b.modifTime, err = getFixTime(binary.BigEndian.Uint32(temp[8:12]))
+	if err != nil {
+		return
+	}
+	b.duration = binary.BigEndian.Uint32(temp[20:24])
+	b.volume, err = dottedNotationToF(temp[36:38])
+	if err != nil {
+		return
+	}
+
+	_, err = file.Seek(36, seekFromCurrent) //skip to width
+	if err != nil {
+		return
+	}
+	_, err = file.Read(temp[:8]) //
+	if err != nil {
+		return
+	}
+	b.width, err = dottedNotationToF(temp[:4])
+	if err != nil {
+		return
+	}
+	b.height, err = dottedNotationToF(temp[4:8])
+
+	return
 }
 
 //mdia  media
@@ -242,11 +329,10 @@ type stbl struct {
 
 //stsc sample to chunk
 /**
-*size 4
-*type 4
-*version 1
-*flags 3
-*entryCount 4
+*header			normalHeaderSize/largeHeaderSize
+*version 		1
+*flags 			3
+*entryCount 	4
  */
 type stsc struct {
 	*Box
@@ -260,6 +346,13 @@ type stscEntry struct {
 	firstChunk      uint32
 	samplesPerChunk uint32
 	sampleDescIndex uint32 //index to find sample description in stsd
+}
+
+func newSTSC(b *Box) *stsc {
+	return &stsc{
+		Box: b,
+		// entrys:make([]*stscEntry,1),
+	}
 }
 
 func (b *stsc) String() string {
@@ -277,13 +370,6 @@ func (b *stsc) String() string {
 	return buffer.String()
 }
 
-func newSTSC(b *Box) *stsc {
-	return &stsc{
-		Box: b,
-		// entrys:make([]*stscEntry,1),
-	}
-}
-
 //scan stsc data in file , return an error ,if any , and resume file seeker
 func (b *stsc) scan(file *os.File) (err error) {
 	savedOffset, _ := file.Seek(0, seekFromCurrent)
@@ -291,7 +377,7 @@ func (b *stsc) scan(file *os.File) (err error) {
 
 	temp := new([12]byte)
 
-	_, err = file.Seek(b.offset+12, seekFromStart) //skip to entry count
+	_, err = file.Seek(b.offset+int64(b.headerSize)+4, seekFromStart) //skip to entry count
 	if err != nil {
 		return
 	}
@@ -324,18 +410,23 @@ func (b *stsc) scan(file *os.File) (err error) {
 
 //stco chunk offset
 /**
-*size 4
-*type 4
-*version 1
-*flags 3
-*entryCount 4
-*chunkOffset entryCount*4
+*header			normalHeaderSize/largeHeaderSize
+*version		1
+*flags 			3
+*entryCount 	4
+*chunkOffset 	entryCount*4
  */
 type stco struct {
 	*Box
 	// version     uint8
 	entryCount  uint32
 	chunkOffset []uint32
+}
+
+func newSTCO(b *Box) *stco {
+	return &stco{
+		Box: b,
+	}
 }
 
 func (b *stco) String() string {
@@ -352,12 +443,6 @@ func (b *stco) String() string {
 	return buffer.String()
 }
 
-func newSTCO(b *Box) *stco {
-	return &stco{
-		Box: b,
-	}
-}
-
 //scan stco data in file , return an error ,if any , and resume file seeker
 func (b *stco) scan(file *os.File) (err error) {
 	savedOffset, _ := file.Seek(0, seekFromCurrent)
@@ -365,7 +450,7 @@ func (b *stco) scan(file *os.File) (err error) {
 
 	temp := new([4]byte)
 
-	_, err = file.Seek(b.offset+12, seekFromStart) //skip to entry count
+	_, err = file.Seek(b.offset+int64(b.headerSize)+4, seekFromStart) //skip to entry count
 	if err != nil {
 		return
 	}
