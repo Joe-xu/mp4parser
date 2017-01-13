@@ -117,16 +117,16 @@ type moov struct {
 *header				normalHeaderSize/largeHeaderSize
 *version 			1
 *flags 				3
-*creation_time 		4
-*modification_time 	4
-*time_scale 		4
+*creation_time		4
+*modification_time	4
+*time_scale			4
 *duration 			4
 *rate 				4
 *volume 			2
 *_reserved 			10
 *matrix 			36
-*pre-defined 		24
-*next_track_id 		4
+*pre-defined		24
+*next_track_id		4
  */
 type mvhd struct {
 	*Box
@@ -191,7 +191,7 @@ const (
 *header				normalHeaderSize/largeHeaderSize
 *version			1
 *flags				3
-*creation_time 		4
+*creation_time		4
 *modification_time	4
 *track_id			4
 *_reserved			4
@@ -332,7 +332,7 @@ type stbl struct {
 *header			normalHeaderSize/largeHeaderSize
 *version 		1
 *flags 			3
-*entryCount 	4
+*entryCount		4
  */
 type stsc struct {
 	*Box
@@ -413,8 +413,8 @@ func (b *stsc) scan(file *os.File) (err error) {
 *header			normalHeaderSize/largeHeaderSize
 *version		1
 *flags 			3
-*entryCount 	4
-*chunkOffset 	entryCount*4
+*entryCount		4
+*chunkOffset	entryCount*4
  */
 type stco struct {
 	*Box

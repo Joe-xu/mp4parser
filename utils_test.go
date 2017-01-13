@@ -26,6 +26,11 @@ func TestDottedNotationToF(t *testing.T) {
 }
 
 func TestByteToUint(t *testing.T) {
+	defer func() {
+		if p := recover(); p != nil {
+			t.Errorf("got pannic")
+		}
+	}()
 
 	tests := [...]struct {
 		input []byte
@@ -36,6 +41,7 @@ func TestByteToUint(t *testing.T) {
 		{[]byte{0xFF}, 255},
 		{[]byte{0xFF, 0x11}, 65297},
 		{[]byte{0x01, 0x00}, 256},
+		{[]byte{0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, math.MaxUint64},
 	}
 
 	for _, test := range tests {
