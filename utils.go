@@ -49,20 +49,18 @@ func dottedNotationToF(n []byte) (float64, error) {
 
 //byteToUint convert bytes into uint64
 func byteToUint(buf []byte) uint64 {
-	var res, tmp uint64
+	var res uint64
+	var count int
 
 	for _, b := range buf {
+		res = uint64(b) | res<<8
 
-		tmp = res << 8
+		if res > 0 {
+			count++
+			if count > 8 {
+				panic("byteToUint:overflow")
+			}
 
-		if tmp < res {
-			panic("byteToUint:overflow")
-		}
-
-		res = tmp | uint64(b)
-
-		if res < tmp || res < uint64(b) {
-			panic("byteToUint:overflow")
 		}
 
 	}
