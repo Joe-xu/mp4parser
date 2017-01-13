@@ -150,11 +150,8 @@ func (b *mvhd) scan(file *os.File) (err error) {
 	defer file.Seek(savedOffset, seekFromStart)
 
 	temp := new([16]byte)
-	_, err = file.Seek(b.offset+int64(b.headerSize)+4, seekFromStart) //skip to creation_time
-	if err != nil {
-		return
-	}
-	_, err = file.Read(temp[:])
+
+	_, err = file.ReadAt(temp[:], b.offset+int64(b.headerSize)+4) //read at creation_time
 	if err != nil {
 		return
 	}
@@ -179,6 +176,12 @@ func (b *mvhd) scan(file *os.File) (err error) {
 //trak track
 type trak struct {
 	*Box
+}
+
+func newTRAK(b *Box) *trak {
+	return &trak{
+		Box: b,
+	}
 }
 
 //tkhd track header
@@ -231,12 +234,7 @@ func (b *tkhd) scan(file *os.File) (err error) {
 
 	temp := new([40]byte)
 
-	_, err = file.Seek(b.offset+int64(b.headerSize), seekFromStart) //skip to version
-	if err != nil {
-		return
-	}
-
-	_, err = file.Read(temp[:40]) //
+	_, err = file.ReadAt(temp[:40], b.offset+int64(b.headerSize)) //read at version
 	if err != nil {
 		return
 	}
@@ -261,11 +259,7 @@ func (b *tkhd) scan(file *os.File) (err error) {
 		return
 	}
 
-	_, err = file.Seek(36, seekFromCurrent) //skip to width
-	if err != nil {
-		return
-	}
-	_, err = file.Read(temp[:8]) //
+	_, err = file.ReadAt(temp[:8], b.offset+int64(b.headerSize)+76) //read at width
 	if err != nil {
 		return
 	}
@@ -290,15 +284,70 @@ type mdhd struct {
 	creationTime *time.Time
 	modifTime    *time.Time
 	duration     uint32
-	// timeScale    uint32
+	timeScale    uint32
 }
 
 //hdlr handler reference
+/**
+*header				normalHeaderSize/largeHeaderSize
+*version			1
+*flags				3
+*pre-defined		4
+*handler_type		4
+*_reserved			12
+*name				end with '\0' in file
+ */
 type hdlr struct {
 	*Box
-	version     uint8
-	handlerType uint32 //"vide"/"soun"/"hint"
-	name        string //end with '\0' in file
+	// version     uint8
+	handlerType string //"vide"/"soun"/"hint"
+	name        string
+}
+
+func newHDLR(b *Box) *hdlr {
+	return &hdlr{
+		Box: b,
+	}
+}
+
+func (b *hdlr) scan(file *os.File) (err error) {
+	savedOffset, _ := file.Seek(0, seekFromCurrent)
+	defer file.Seek(savedOffset, seekFromStart)
+
+	temp := make([]byte, 0, 4)
+
+	_, err = file.ReadAt(temp[:4], b.offset+int64(b.headerSize)+8)
+	if err != nil {
+		return
+	}
+
+	b.handlerType = string(temp[:4])
+
+	_, err = file.Seek(b.offset+int64(b.headerSize)+24, seekFromStart)
+
+	if err != nil {
+		return
+	}
+	//read name
+	temp = temp[:0]
+	t := make([]byte, 1)
+
+	for {
+
+		n, err := file.Read(t)
+		if err != nil || n == 0 {
+			return err
+		}
+
+		if t[0] == '\000' {
+			break
+		}
+		temp = append(temp, t[0])
+	}
+
+	b.name = string(temp)
+
+	return
 }
 
 //minf media information
@@ -377,10 +426,11 @@ func (b *stsc) scan(file *os.File) (err error) {
 
 	temp := new([12]byte)
 
-	_, err = file.Seek(b.offset+int64(b.headerSize)+4, seekFromStart) //skip to entry count
+	_, err = file.Seek(b.offset+int64(b.headerSize)+4, seekFromStart)
 	if err != nil {
 		return
 	}
+
 	_, err = file.Read(temp[:4]) //read entry count
 	if err != nil {
 		return
@@ -449,11 +499,8 @@ func (b *stco) scan(file *os.File) (err error) {
 	defer file.Seek(savedOffset, seekFromStart)
 
 	temp := new([4]byte)
+	_, err = file.Seek(b.offset+int64(b.headerSize)+4, seekFromStart)
 
-	_, err = file.Seek(b.offset+int64(b.headerSize)+4, seekFromStart) //skip to entry count
-	if err != nil {
-		return
-	}
 	_, err = file.Read(temp[:]) //read entry count
 	if err != nil {
 		return

@@ -48,7 +48,9 @@ func (p *Parser) Parse() (*MediaInfo, error) {
 	p.file.Seek(0, seekFromStart) //ensure parsing start from file head
 	err = p.parseInnerBox(p.rootBox.Box)
 
-	return p.mediaInfo, nil
+	err = rangeBox(p.rootBox.Box, p.scanBoxData) // //TODO:handle err
+
+	return p.mediaInfo, err
 }
 
 //parseBoxHeadr parses b's size and type in header, return an error,if any,and resumes file seeker
@@ -108,44 +110,74 @@ func (p *Parser) parseInnerBox(b *Box) (err error) {
 	endOffset = savedOffset + int64(b.size-uint64(b.headerSize))
 
 	for {
-		innerBoxTmp := newBox()
-		innerBoxTmp.nth = b.nth + 1
-		innerBoxTmp.offset = offsetTmp
-		b.addInnerBox(innerBoxTmp)
-		if err = p.parseBoxHeadr(innerBoxTmp.header); err != nil {
+		innerBox := newBox()
+		innerBox.nth = b.nth + 1
+		innerBox.offset = offsetTmp
+		if err = p.parseBoxHeadr(innerBox.header); err != nil {
 			if err == io.EOF {
 				return
 			}
 			return fmt.Errorf("parseInnerBox:%v %v\n", b, err)
 		}
+		b.addInnerBox(innerBox)
 
-		if innerBoxTmp.isContainer() {
+		if innerBox.isContainer() {
 
-			if err = p.parseInnerBox(innerBoxTmp); err != nil { //
+			if err = p.parseInnerBox(innerBox); err != nil { //
 				return
 			}
 
 		}
 
-		_ = p.scanBoxData(innerBoxTmp) //TODO:handle err
-
-		if offsetTmp, err = p.file.Seek(int64(innerBoxTmp.size), seekFromCurrent); err != nil || offsetTmp >= endOffset {
+		if offsetTmp, err = p.file.Seek(int64(innerBox.size), seekFromCurrent); err != nil || offsetTmp >= endOffset {
 			return
 		}
 	}
 
 }
 
-//scanBoxData scans box data from file, return an error , if any ,and resumes file seeker
+//rangeBox run func do for each box contained below b and return an error , if any
+func rangeBox(b *Box, do func(*Box) error) (err error) {
+	for _, innerBoxSlice := range b.innerBoxs {
+		for _, inner := range innerBoxSlice {
+
+			err = do(inner)
+			if err != nil {
+				return err
+			}
+
+			err = rangeBox(inner, do)
+			if err != nil {
+				return err
+			}
+
+		}
+	}
+	return nil
+}
+
+//scanBoxData scans box data from file, return an error , if any
 func (p *Parser) scanBoxData(b *Box) (err error) {
-	savedOffset, _ := p.file.Seek(0, seekFromCurrent)
-	defer p.file.Seek(savedOffset, seekFromStart)
+	// savedOffset, _ := p.file.Seek(0, seekFromCurrent)
+	// defer p.file.Seek(savedOffset, seekFromStart)
 
 	switch b.boxType {
-	case "tkhd": //get track data
-		tkhdBox := newTKHD(b)
+
+	case "trak": //get track data
+		tkhdBox := newTKHD(b.innerBoxs["tkhd"][0])
 		err = tkhdBox.scan(p.file)
-		//TODO
+
+		hdlrBox := newHDLR(b.innerBoxs["mdia"][0].innerBoxs["hdlr"][0])
+		err = hdlrBox.scan(p.file)
+
+		if hdlrBox.handlerType == "vide" {
+			p.mediaInfo.height = tkhdBox.height
+			p.mediaInfo.width = tkhdBox.width
+			p.rootBox.videoTracks = append(p.rootBox.videoTracks, newTRAK(b))
+		} else if hdlrBox.handlerType == "soun" {
+
+			p.rootBox.soundTracks = append(p.rootBox.soundTracks, newTRAK(b))
+		}
 
 	case "mvhd":
 		mvhdBox := newMVHD(b)
@@ -161,12 +193,14 @@ func (p *Parser) scanBoxData(b *Box) (err error) {
 		stscBox := newSTSC(b)
 		err = stscBox.scan(p.file)
 		p.dataBoxs[b.boxType] = append(p.dataBoxs[b.boxType], stscBox)
+
 	case "stco":
 		stcoBox := newSTCO(b)
 		err = stcoBox.scan(p.file)
 		p.dataBoxs[b.boxType] = append(p.dataBoxs[b.boxType], stcoBox)
-	default:
-		return fmt.Errorf("unexcepted box type:%v", b.boxType)
+
+		// default:
+		// 	return fmt.Errorf("unexcepted box type:%v", b.boxType)
 	}
 	return
 }
