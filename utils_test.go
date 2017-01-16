@@ -2,6 +2,7 @@ package mp4parser
 
 import "testing"
 import "math"
+import "time"
 
 func TestDottedNotationToF(t *testing.T) {
 	const eps = 1e-7
@@ -22,6 +23,12 @@ func TestDottedNotationToF(t *testing.T) {
 		if math.Abs(got-test.want) > eps {
 			t.Errorf("intput %v want %v , got %v", test.input, test.want, got)
 		}
+	}
+}
+
+func BenchmarkDottedNotationToF(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		dottedNotationToF([]byte{0x23, 0x56, 0xff, 0x01})
 	}
 }
 
@@ -53,6 +60,12 @@ func TestByteToUint(t *testing.T) {
 	}
 }
 
+func BenchmarkByteToUint(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		byteToUint([]byte{0x01, 0x00})
+	}
+}
+
 func TestByteToUintOverFlow(t *testing.T) {
 	defer func() {
 		if p := recover(); p == nil {
@@ -61,4 +74,12 @@ func TestByteToUintOverFlow(t *testing.T) {
 	}()
 
 	byteToUint([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
+}
+
+func TestGetFixTime(t *testing.T) {
+	want := time.Date(1904, 1, 1, 0, 0, 0, 0, time.UTC)
+	got, _ := getFixTime(0)
+	if !got.Equal(want) {
+		t.Errorf("want: %v \t got: %v", want, got)
+	}
 }
