@@ -24,8 +24,9 @@ func TestParse(t *testing.T) {
 	const eps = 1e-7
 
 	want := &MediaInfo{
-		width:  560,
-		height: 320,
+		width:             560,
+		height:            320,
+		soundSamplingRate: 48000,
 	}
 	t1 := time.Date(2010, 3, 20, 21, 29, 11, 0, time.UTC)
 	want.creationTime = &t1
@@ -42,7 +43,8 @@ func TestParse(t *testing.T) {
 		math.Abs(got.height-want.height) > eps ||
 		!got.creationTime.Equal(*want.creationTime) ||
 		!got.modifTime.Equal(*want.modifTime) ||
-		*got.duration != *want.duration {
+		*got.duration != *want.duration ||
+		got.soundSamplingRate != want.soundSamplingRate {
 		t.Errorf("want:\n%v\ngot:\n%v", want, got)
 	}
 

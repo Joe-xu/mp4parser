@@ -278,13 +278,46 @@ type mdia struct {
 }
 
 //mdhd media header
+/**
+*header					normalHeaderSize/largeHeaderSize
+*version				1
+*flags					3
+*creation_time			4
+*modification_time		4
+*time_scale				4
+*duration				4
+*language				2
+*pre-defined			2
+ */
 type mdhd struct {
 	*Box
-	version      uint8
-	creationTime *time.Time
-	modifTime    *time.Time
-	duration     uint32
-	timeScale    uint32
+	// version uint8
+	// creationTime *time.Time
+	// modifTime    *time.Time
+	// duration  *time.Duration
+	timeScale uint32
+}
+
+func newMDHD(b *Box) *mdhd {
+	return &mdhd{
+		Box: b,
+	}
+}
+
+func (b *mdhd) scan(file *os.File) (err error) {
+	savedOffset, _ := file.Seek(0, seekFromCurrent)
+	defer file.Seek(savedOffset, seekFromStart)
+
+	temp := make([]byte, 0, 4)
+
+	_, err = file.ReadAt(temp[:4], b.offset+int64(b.headerSize)+12)
+	if err != nil {
+		return
+	}
+
+	b.timeScale = binary.BigEndian.Uint32(temp[:4])
+
+	return
 }
 
 //hdlr handler reference
