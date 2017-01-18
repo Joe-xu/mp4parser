@@ -175,7 +175,10 @@ func (p *Parser) scanBoxData(b *Box) (err error) {
 			p.mediaInfo.width = tkhdBox.width
 			p.rootBox.videoTracks = append(p.rootBox.videoTracks, newTRAK(b))
 		} else if hdlrBox.handlerType == "soun" {
+			mdhdBox := newMDHD(b.innerBoxs["mdia"][0].innerBoxs["mdhd"][0])
+			mdhdBox.scan(p.file)
 
+			p.mediaInfo.soundSamplingRate = mdhdBox.timeScale
 			p.rootBox.soundTracks = append(p.rootBox.soundTracks, newTRAK(b))
 		}
 
