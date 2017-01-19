@@ -556,3 +556,67 @@ func (b *stco) scan(file *os.File) (err error) {
 
 	return
 }
+
+//stsz  sample size
+/**
+*header
+*version			1
+*flags				3
+*sample_size		4//if it have the value 0,sample have different size as shown in following sample_size
+*entry_count		4//count of following sample_size
+*sample_size		4*sample_count
+ */
+
+type stsz struct {
+	*Box
+	// version int
+	entryCount uint32
+	sampleSize []uint32
+}
+
+func newSTSZ(b *Box) *stsz {
+	return &stsz{
+		Box: b,
+	}
+}
+
+func (b *stsz) scan(file *os.File) (err error) {
+	savedOffset, _ := file.Seek(0, seekFromCurrent)
+	defer file.Seek(savedOffset, seekFromStart)
+
+	temp := new([4]byte)
+	_, err = file.Seek(b.offset+int64(b.headerSize)+4, seekFromStart)
+
+	_, err = file.Read(temp[:4]) //
+	if err != nil {
+		return
+	}
+
+	if binary.BigEndian.Uint32(temp[:4]) != 0 { //all samples have the same size
+		b.entryCount = 0
+		b.sampleSize = []uint32{binary.BigEndian.Uint32(temp[:4])}
+		return
+	}
+
+	_, err = file.Read(temp[:4]) //
+	if err != nil {
+		return
+	}
+
+	b.entryCount = binary.BigEndian.Uint32(temp[:4])
+	if b.sampleSize == nil {
+		b.sampleSize = make([]uint32, 0, b.entryCount)
+	}
+
+	for i := uint32(0); i < b.entryCount; i++ {
+
+		_, err = file.Read(temp[:4])
+		if err != nil {
+			return
+		}
+		b.sampleSize = append(b.sampleSize, binary.BigEndian.Uint32(temp[:4]))
+
+	}
+
+	return
+}
