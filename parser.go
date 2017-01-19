@@ -21,6 +21,8 @@ type Parser struct {
 	rootBox   *RootBox
 	dataBoxs  map[string][]dataBox
 	mediaInfo *MediaInfo
+
+	currentTrack string // parsing track type
 }
 
 //NewParser return new Parser
@@ -146,10 +148,12 @@ func rangeBox(b *Box, do func(*Box) error) (err error) {
 				return err
 			}
 
+			// if inner.isContainer() {
 			err = rangeBox(inner, do)
 			if err != nil {
 				return err
 			}
+			// }
 
 		}
 	}
@@ -164,17 +168,19 @@ func (p *Parser) scanBoxData(b *Box) (err error) {
 	switch b.boxType {
 
 	case "trak": //get track data
-		tkhdBox := newTKHD(b.innerBoxs["tkhd"][0])
-		err = tkhdBox.scan(p.file)
 
 		hdlrBox := newHDLR(b.innerBoxs["mdia"][0].innerBoxs["hdlr"][0])
 		err = hdlrBox.scan(p.file)
+		p.currentTrack = hdlrBox.handlerType //update parsing track type
 
-		if hdlrBox.handlerType == "vide" {
+		if p.currentTrack == "vide" {
+			tkhdBox := newTKHD(b.innerBoxs["tkhd"][0])
+			err = tkhdBox.scan(p.file)
+
 			p.mediaInfo.height = tkhdBox.height
 			p.mediaInfo.width = tkhdBox.width
 			p.rootBox.videoTracks = append(p.rootBox.videoTracks, newTRAK(b))
-		} else if hdlrBox.handlerType == "soun" {
+		} else if p.currentTrack == "soun" {
 			mdhdBox := newMDHD(b.innerBoxs["mdia"][0].innerBoxs["mdhd"][0])
 			mdhdBox.scan(p.file)
 
