@@ -19,3 +19,27 @@ func (m *MediaInfo) String() string {
 		"creationTime:%v\nmodifTime:%v\nduration:%v\nwidth:%.2f\theight:%.2f\tsound samlping rate:%dHz",
 		m.creationTime, m.modifTime, m.duration, m.width, m.height, m.soundSamplingRate)
 }
+
+func (m *MediaInfo) Width() float64 {
+	return m.width
+}
+
+func (m *MediaInfo) Height() float64 {
+	return m.height
+}
+
+func (m *MediaInfo) SamplingRate() uint32 {
+	return m.soundSamplingRate
+}
+
+func (m *MediaInfo) CreationTime() time.Time {
+	return *m.creationTime
+}
+
+func (m *MediaInfo) ModifiedTime() *time.Time {
+	return m.modifTime
+}
+
+func (m *MediaInfo) Duration() *time.Duration {
+	return m.duration
+}
